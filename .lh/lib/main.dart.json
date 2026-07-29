@@ -1,0 +1,18 @@
+{
+    "sourceFile": "lib/main.dart",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1785323216229,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1785323216229,
+            "name": "Commit-0",
+            "content": "import 'package:flutter/material.dart';\nimport 'screens/exam_list_screen.dart';\n\nvoid main() {\n  runApp(const OmrApp());\n}\n\nclass OmrApp extends StatelessWidget {\n  const OmrApp({super.key});\n\n  @override\n  Widget build(BuildContext context) {\n    return MaterialApp(\n      title: 'OMR Scanner',\n      debugShowCheckedModeBanner: false,\n      theme: ThemeData(\n        useMaterial3: true,\n        colorSchemeSeed: Colors.indigo,\n      ),\n      home: const ExamListScreen(),\n    );\n  }\n}\n"
+        }
+    ]
+}
