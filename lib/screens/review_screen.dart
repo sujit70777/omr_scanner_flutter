@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/exam.dart';
+import '../services/app_settings.dart';
 import '../services/omr_processor.dart';
 
 /// What the user confirmed: the corrected marks plus the roll number.
@@ -221,7 +222,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
                                   spacing: 6,
                                   children: List.generate(exam.optionsCount, (o) {
                                     final sel = _marked[q]!.contains(o);
-                                    final label = o < optionLabelsBn.length ? optionLabelsBn[o] : '${o + 1}';
+                                    final labels = AppSettings.instance.optionLabels;
+                                    final label = o < labels.length ? labels[o] : '${o + 1}';
                                     final fill = _fillFor(q, o);
                                     return GestureDetector(
                                       onLongPress: () {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
 import '../models/exam.dart';
 import '../models/student_result.dart';
+import '../services/app_settings.dart';
 
 class StudentDetailScreen extends StatefulWidget {
   final int resultId;
@@ -71,7 +72,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                 _StatCol('Correct', '${result.correctCount}', Colors.green),
                 _StatCol('Wrong', '${result.wrongCount}', Colors.red),
                 _StatCol('Blank', '${result.unattemptedCount}', Colors.grey),
-                _StatCol('Score', result.score.toStringAsFixed(0), Colors.indigo),
+                _StatCol('Score', result.score.toStringAsFixed(
+                    result.score == result.score.roundToDouble() ? 0 : 1), Colors.indigo),
               ],
             ),
           ),
@@ -83,13 +85,24 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                 final qNo = i + 1;
                 final key = List<int>.from(exam.answerKey[qNo] ?? const [])..sort();
                 final given = List<int>.from(result.marked[qNo] ?? const [])..sort();
-                final isBlank = given.isEmpty;
-                final isCorrect = !isBlank && _listEq(given, key);
-                final color = isBlank ? Colors.grey : (isCorrect ? Colors.green : Colors.red);
-                final icon = isBlank ? Icons.remove_circle_outline : (isCorrect ? Icons.check_circle : Icons.cancel);
+                final verdict = exam.verdictFor(qNo, given);
+                final color = switch (verdict) {
+                  QuestionVerdict.blank => Colors.grey,
+                  QuestionVerdict.correct => Colors.green,
+                  QuestionVerdict.wrong => Colors.red,
+                };
+                final icon = switch (verdict) {
+                  QuestionVerdict.blank => Icons.remove_circle_outline,
+                  QuestionVerdict.correct => Icons.check_circle,
+                  QuestionVerdict.wrong => Icons.cancel,
+                };
 
-                String labelsFor(List<int> idxs) =>
-                    idxs.isEmpty ? '-' : idxs.map((i) => i < optionLabelsBn.length ? optionLabelsBn[i] : '${i + 1}').join(', ');
+                String labelsFor(List<int> idxs) {
+                  final labels = AppSettings.instance.optionLabels;
+                  return idxs.isEmpty
+                      ? '-'
+                      : idxs.map((i) => i < labels.length ? labels[i] : '${i + 1}').join(', ');
+                }
 
                 return ListTile(
                   leading: Icon(icon, color: color),
@@ -102,14 +115,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
         ],
       ),
     );
-  }
-
-  bool _listEq(List<int> a, List<int> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 }
 

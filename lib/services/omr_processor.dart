@@ -434,25 +434,20 @@ class OmrProcessor {
 
   static (int, int, int, double) grade(Exam exam, Map<int, List<int>> marked) {
     int correct = 0, wrong = 0, unattempted = 0;
+    final s = exam.settings;
     for (int q = 1; q <= exam.totalQuestions; q++) {
-      final key = List<int>.from(exam.answerKey[q] ?? const <int>[])..sort();
-      final given = List<int>.from(marked[q] ?? const <int>[])..sort();
-      if (given.isEmpty) {
-        unattempted++;
-      } else if (_eq(given, key)) {
-        correct++;
-      } else {
-        wrong++;
+      final given = List<int>.from(marked[q] ?? const <int>[]);
+      switch (exam.verdictFor(q, given)) {
+        case QuestionVerdict.blank:
+          unattempted++;
+        case QuestionVerdict.correct:
+          correct++;
+        case QuestionVerdict.wrong:
+          wrong++;
       }
     }
-    return (correct, wrong, unattempted, correct.toDouble());
-  }
-
-  static bool _eq(List<int> a, List<int> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
+    final score =
+        correct * s.marksPerCorrect - wrong * s.negativeMarkPerWrong;
+    return (correct, wrong, unattempted, score);
   }
 }

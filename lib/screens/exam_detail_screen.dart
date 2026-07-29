@@ -3,6 +3,7 @@ import '../db/db_helper.dart';
 import '../models/exam.dart';
 import 'answer_key_screen.dart';
 import 'detection_test_screen.dart';
+import 'exam_settings_screen.dart';
 import 'history_screen.dart';
 import 'scan_screen.dart';
 
@@ -76,6 +77,19 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                _ActionTile(
+                  icon: Icons.settings_outlined,
+                  title: 'Exam settings',
+                  subtitle: 'Multi-mark, partial answers, scoring rules',
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => ExamSettingsScreen(examId: exam.id!)),
+                    );
+                    _load();
+                  },
+                ),
                 _ActionTile(
                   icon: Icons.checklist_rtl,
                   title: 'Answer Key',

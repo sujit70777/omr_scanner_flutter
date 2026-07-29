@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
 import '../models/exam.dart';
+import '../services/app_settings.dart';
 
 class AnswerKeyScreen extends StatefulWidget {
   final int examId;
@@ -74,7 +75,8 @@ class _AnswerKeyScreenState extends State<AnswerKeyScreen> {
                     child: Wrap(
                       spacing: 6,
                       children: List.generate(exam.optionsCount, (optIdx) {
-                        final label = optIdx < optionLabelsBn.length ? optionLabelsBn[optIdx] : '${optIdx + 1}';
+                        final labels = AppSettings.instance.optionLabels;
+                        final label = optIdx < labels.length ? labels[optIdx] : '${optIdx + 1}';
                         final isSel = _selected[qNo]!.contains(optIdx);
                         return FilterChip(
                           label: Text(label),

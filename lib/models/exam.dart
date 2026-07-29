@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ui' show Offset;
+import 'exam_settings.dart';
 
 /// A quadrilateral region of bubbles for a contiguous block of questions.
 /// Corners are centers of the extreme bubbles, in ORIGINAL image pixels:
@@ -72,6 +73,7 @@ class CalibrationSection {
   }
 }
 
+enum QuestionVerdict { blank, correct, wrong }
 
 class Exam {
   final int? id;
@@ -79,9 +81,10 @@ class Exam {
   final int totalQuestions;
   final int optionsCount; // usually 4 (ক খ গ ঘ)
   final String createdAt;
-  final Map<int, List<int>> answerKey; // questionNo -> correct option indices (supports multi-answer)
-  final List<CalibrationSection> calibration; // empty until calibrated
-  final double? sheetAspectRatio; // width/height of the calibration sample photo, guides live scan overlay
+  final Map<int, List<int>> answerKey; // questionNo -> correct option indices
+  final List<CalibrationSection> calibration; // legacy — unused by scanner
+  final double? sheetAspectRatio;
+  final ExamSettings settings;
 
   Exam({
     this.id,
@@ -92,14 +95,34 @@ class Exam {
     Map<int, List<int>>? answerKey,
     List<CalibrationSection>? calibration,
     this.sheetAspectRatio,
+    ExamSettings? settings,
   })  : answerKey = answerKey ?? {},
-        calibration = calibration ?? [];
+        calibration = calibration ?? [],
+        settings = settings ?? const ExamSettings();
 
-  bool get hasAnswerKey => answerKey.length == totalQuestions && answerKey.values.every((v) => v.isNotEmpty);
+  bool get hasAnswerKey =>
+      answerKey.length == totalQuestions && answerKey.values.every((v) => v.isNotEmpty);
 
-  /// Kept only so old saved rows still load. The scanner no longer uses
-  /// calibration — it registers against the sheet's own printed marks.
+  /// Kept so old saved rows still load. Scanner uses printed timing marks.
   bool get isCalibrated => true;
+
+  /// Grade one question under this exam's settings.
+  QuestionVerdict verdictFor(int questionNo, List<int> marked) {
+    final key = List<int>.from(answerKey[questionNo] ?? const <int>[])..sort();
+    final given = List<int>.from(marked)..sort();
+    if (given.isEmpty) {
+      return settings.countBlankAsWrong ? QuestionVerdict.wrong : QuestionVerdict.blank;
+    }
+
+    final hasExtra = given.any((o) => !key.contains(o));
+    final hasMissing = key.any((o) => !given.contains(o));
+    final hasOverlap = given.any((o) => key.contains(o));
+
+    if (!hasOverlap) return QuestionVerdict.wrong;
+    if (hasExtra && !settings.multiMarkCountsIfIncludesAnswer) return QuestionVerdict.wrong;
+    if (hasMissing && !settings.partialMultiAnswerCounts) return QuestionVerdict.wrong;
+    return QuestionVerdict.correct;
+  }
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -110,6 +133,7 @@ class Exam {
         'answerKeyJson': jsonEncode(answerKey.map((k, v) => MapEntry(k.toString(), v))),
         'calibrationJson': jsonEncode(calibration.map((c) => c.toJson()).toList()),
         'sheetAspectRatio': sheetAspectRatio,
+        'settingsJson': jsonEncode(settings.toJson()),
       };
 
   factory Exam.fromMap(Map<String, dynamic> m) {
@@ -118,6 +142,11 @@ class Exam {
     akRaw.forEach((k, v) => ak[int.parse(k)] = List<int>.from(v));
     final calRaw = jsonDecode(m['calibrationJson'] ?? '[]') as List<dynamic>;
     final cal = calRaw.map((c) => CalibrationSection.fromJson(c)).toList();
+    final settingsRaw = m['settingsJson'];
+    Map<String, dynamic>? settingsMap;
+    if (settingsRaw is String && settingsRaw.isNotEmpty) {
+      settingsMap = jsonDecode(settingsRaw) as Map<String, dynamic>;
+    }
     return Exam(
       id: m['id'],
       name: m['name'],
@@ -127,6 +156,7 @@ class Exam {
       answerKey: ak,
       calibration: cal,
       sheetAspectRatio: (m['sheetAspectRatio'] as num?)?.toDouble(),
+      settings: ExamSettings.fromJson(settingsMap),
     );
   }
 
@@ -137,6 +167,7 @@ class Exam {
     Map<int, List<int>>? answerKey,
     List<CalibrationSection>? calibration,
     double? sheetAspectRatio,
+    ExamSettings? settings,
   }) {
     return Exam(
       id: id,
@@ -147,6 +178,7 @@ class Exam {
       answerKey: answerKey ?? this.answerKey,
       calibration: calibration ?? this.calibration,
       sheetAspectRatio: sheetAspectRatio ?? this.sheetAspectRatio,
+      settings: settings ?? this.settings,
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../db/db_helper.dart';
 import '../models/exam.dart';
 import '../models/student_result.dart';
+import '../services/app_settings.dart';
 import '../services/omr_processor.dart';
 import 'review_screen.dart';
 
@@ -38,7 +39,10 @@ class _ScanScreenState extends State<ScanScreen> {
       _outcome = null;
     });
     try {
-      final picked = await ImagePicker().pickImage(source: source, imageQuality: 95);
+      final picked = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: AppSettings.instance.imageQuality,
+      );
       if (picked == null) {
         setState(() => _busy = false);
         return;

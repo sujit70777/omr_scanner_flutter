@@ -18,7 +18,7 @@ class DBHelper {
     final path = join(await getDatabasesPath(), 'omr_scanner.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE exams(
@@ -29,7 +29,8 @@ class DBHelper {
             createdAt TEXT NOT NULL,
             answerKeyJson TEXT NOT NULL,
             calibrationJson TEXT NOT NULL,
-            sheetAspectRatio REAL
+            sheetAspectRatio REAL,
+            settingsJson TEXT NOT NULL DEFAULT '{}'
           )
         ''');
         await db.execute('''
@@ -50,6 +51,10 @@ class DBHelper {
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE exams ADD COLUMN sheetAspectRatio REAL');
+        }
+        if (oldVersion < 3) {
+          await db.execute(
+              "ALTER TABLE exams ADD COLUMN settingsJson TEXT NOT NULL DEFAULT '{}'");
         }
       },
     );

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'screens/exam_list_screen.dart';
+import 'services/app_settings.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppSettings.instance.load();
   runApp(const OmrApp());
 }
 
@@ -10,14 +13,27 @@ class OmrApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'OMR Scanner',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.indigo,
-      ),
-      home: const ExamListScreen(),
+    final settings = AppSettings.instance;
+    return AnimatedBuilder(
+      animation: settings,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'OMR Scanner',
+          debugShowCheckedModeBanner: false,
+          themeMode: settings.themeMode,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: Colors.indigo,
+            brightness: Brightness.light,
+          ),
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: Colors.indigo,
+            brightness: Brightness.dark,
+          ),
+          home: const ExamListScreen(),
+        );
+      },
     );
   }
 }

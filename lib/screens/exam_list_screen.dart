@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
 import '../models/exam.dart';
 import 'add_exam_screen.dart';
+import 'app_settings_screen.dart';
 import 'exam_detail_screen.dart';
 
 class ExamListScreen extends StatefulWidget {
@@ -49,7 +50,19 @@ class _ExamListScreenState extends State<ExamListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Exams')),
+      appBar: AppBar(
+        title: const Text('Exams'),
+        actions: [
+          IconButton(
+            tooltip: 'App settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AppSettingsScreen()),
+            ),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _exams.isEmpty

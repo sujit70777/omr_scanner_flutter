@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../db/db_helper.dart';
 import '../models/exam.dart';
+import '../services/app_settings.dart';
 
 class AddExamScreen extends StatefulWidget {
   const AddExamScreen({super.key});
@@ -14,8 +15,14 @@ class _AddExamScreenState extends State<AddExamScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _countCtrl = TextEditingController();
-  int _optionsCount = 4;
+  late int _optionsCount;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _optionsCount = AppSettings.instance.defaultOptionsCount;
+  }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
