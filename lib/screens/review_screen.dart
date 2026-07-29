@@ -149,29 +149,24 @@ class _ReviewScreenState extends State<ReviewScreen> {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: Text(
-                  'Pinch to zoom. Green = read as filled · Red = read as empty · Yellow = borderline. '
-                  'If the circles are drifting off the printed bubbles, redo calibration.',
+                  'Pinch to zoom. Green = read as filled · Red = read as empty · Yellow = borderline.',
                   style: TextStyle(fontSize: 11, color: Colors.grey),
                 ),
               ),
 
-            // ---- roll number (auto-read from the bubbled grid) ----
+            // ---- roll number (typed manually — answers only are auto-read) ----
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
               child: TextField(
                 controller: _rollCtrl,
-                decoration: InputDecoration(
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
                   labelText: 'Roll number',
-                  border: const OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                   isDense: true,
-                  prefixIcon: const Icon(Icons.badge_outlined),
-                  helperText: widget.outcome.rollNumber != null
-                      ? 'Read automatically from the sheet — edit if wrong'
-                      : 'Could not read the roll bubbles — type it in',
-                  helperStyle: TextStyle(
-                    color: widget.outcome.rollNumber != null ? Colors.green[700] : Colors.orange[800],
-                    fontSize: 11,
-                  ),
+                  prefixIcon: Icon(Icons.badge_outlined),
+                  helperText: 'Type the roll number from the sheet',
+                  helperStyle: TextStyle(fontSize: 11),
                 ),
               ),
             ),

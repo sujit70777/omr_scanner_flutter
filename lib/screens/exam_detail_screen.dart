@@ -3,8 +3,8 @@ import '../db/db_helper.dart';
 import '../models/exam.dart';
 import 'answer_key_screen.dart';
 import 'detection_test_screen.dart';
-import 'live_scan_screen.dart';
 import 'history_screen.dart';
+import 'scan_screen.dart';
 
 class ExamDetailScreen extends StatefulWidget {
   final int examId;
@@ -95,12 +95,13 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
                 ),
                 _ActionTile(
                   icon: Icons.document_scanner,
-                  title: 'Scan Sheets (Live)',
-                  subtitle: 'Auto-aligns to the sheet — no calibration needed',
+                  title: 'Scan Sheets',
+                  subtitle: 'Take or pick a photo — same capture as Test Detection',
                   enabled: exam.hasAnswerKey,
                   onTap: exam.hasAnswerKey
                       ? () async {
-                          await Navigator.push(context, MaterialPageRoute(builder: (_) => LiveScanScreen(examId: exam.id!)));
+                          await Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => ScanScreen(examId: exam.id!)));
                           _load();
                         }
                       : null,

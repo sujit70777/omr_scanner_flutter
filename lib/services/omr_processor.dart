@@ -17,7 +17,7 @@ class BubbleReading {
 class OmrScanOutcome {
   final Map<int, List<int>> marked;
   final List<BubbleReading> readings;
-  final String? rollNumber; // read from the bubbled roll grid, null if unreadable
+  final String? rollNumber; // always null — roll is typed on review
   final double confidence;
   final List<int> ambiguousQuestions;
   final Uint8List debugPng;
@@ -37,9 +37,8 @@ class OmrScanOutcome {
 }
 
 /// Maps the unit square onto an arbitrary quadrilateral (Heckbert's
-/// projective mapping). This is what corrects for the photo being rotated,
-/// tilted, or shot at an angle — the whole reason manual calibration is no
-/// longer needed.
+/// projective mapping). Corrects rotation, tilt and perspective from the
+/// four outermost timing-mark corners.
 class _Homography {
   late final double a, b, c, d, e, f, g, h;
 
@@ -114,6 +113,33 @@ List<_Blob> _findBlobs(Uint8List mask, int w, int h, int minArea, int maxArea) {
   return blobs;
 }
 
+/// Group marks that share roughly the same Y into horizontal bands.
+List<List<_Blob>> _clusterBands(List<_Blob> marks, double yTol) {
+  if (marks.isEmpty) return const [];
+  final sorted = [...marks]..sort((a, b) => a.cy.compareTo(b.cy));
+  final bands = <List<_Blob>>[];
+  var current = <_Blob>[sorted.first];
+  for (int i = 1; i < sorted.length; i++) {
+    if (sorted[i].cy - current.last.cy <= yTol) {
+      current.add(sorted[i]);
+    } else {
+      bands.add(current);
+      current = <_Blob>[sorted[i]];
+    }
+  }
+  bands.add(current);
+  return bands;
+}
+
+Uint8List _annotateMarks(img.Image image, List<_Blob> marks) {
+  final debug = image.clone();
+  final cBlue = img.ColorRgb8(40, 120, 255);
+  for (final m in marks) {
+    img.drawRect(debug, x1: m.minX, y1: m.minY, x2: m.maxX, y2: m.maxY, color: cBlue);
+  }
+  return Uint8List.fromList(img.encodePng(debug));
+}
+
 Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
   final bytes = args['bytes'] as Uint8List;
   final totalQuestions = args['totalQuestions'] as int;
@@ -129,7 +155,9 @@ Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
   }
   final w = image.width, h = image.height;
 
-  // Channel split. Black ink is dark in RED; the red printing is not.
+  // Channel split. True black ink is dark in BOTH red and green.
+  // Red printing vanishes in red. Green tablecloth / foliage is dark in red
+  // but bright in green — requiring both channels kills that false signal.
   final red = Uint8List(w * h);
   final green = Uint8List(w * h);
   for (int y = 0; y < h; y++) {
@@ -146,54 +174,84 @@ Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
   final blackCut = max(paperWhite * 0.45, 30.0);
   final inkCut = max(paperWhite * 0.62, 40.0);
 
-  Uint8List debugFail() => Uint8List.fromList(img.encodePng(image));
-
   // ---- Find the printed timing marks (solid black rectangles) ----
   final blackMask = Uint8List(w * h);
   for (int i = 0; i < w * h; i++) {
-    blackMask[i] = red[i] < blackCut ? 1 : 0;
+    blackMask[i] = (red[i] < blackCut && green[i] < blackCut) ? 1 : 0;
   }
   final minMarkArea = (w * 0.004 * w * 0.008).round();
   final blobs = _findBlobs(blackMask, w, h, max(minMarkArea, 20), (w * w * 0.004).round());
 
+  // Timing marks are short vertical rectangles (taller than wide / near-square).
+  // Filled bubbles are ~circular (ar ≈ 1) and are rejected by ar < 0.90.
   final marks = <_Blob>[];
   for (final blk in blobs) {
     final fill = blk.area / (blk.w * blk.h);
     final ar = blk.w / blk.h;
     final wn = blk.w / w, hn = blk.h / w;
-    if (fill > 0.70 && ar > 0.18 && ar < 0.95 && wn > 0.0035 && wn < 0.040 && hn > 0.007 && hn < 0.050) {
+    if (fill > 0.65 &&
+        ar > 0.22 &&
+        ar < 0.90 &&
+        wn > 0.0030 &&
+        wn < 0.035 &&
+        hn > 0.006 &&
+        hn < 0.045) {
       marks.add(blk);
     }
   }
 
-  if (marks.length < 24) {
+  if (marks.length < 20) {
     return {
       'failure': 'Could not find the sheet\'s registration marks (found ${marks.length}). '
           'Make sure the whole sheet is inside the frame, lying flat and evenly lit.',
-      'debugPng': debugFail(),
+      'debugPng': _annotateMarks(image, marks),
     };
   }
 
-  // Split into the top and bottom timing bands at the largest vertical gap.
-  marks.sort((p, q) => p.cy.compareTo(q.cy));
-  int splitIdx = -1;
-  double biggestGap = 0;
-  for (int i = 1; i < marks.length; i++) {
-    final gap = marks[i].cy - marks[i - 1].cy;
-    if (gap > biggestGap) {
-      biggestGap = gap;
-      splitIdx = i;
-    }
+  // Cluster into horizontal bands. Timing strips have ~40–45 marks; a filled
+  // answer row has at most 12 — so requiring ≥18 uniquely picks the strips.
+  final medianH = ([...marks.map((m) => m.h)]..sort())[marks.length ~/ 2].toDouble();
+  final yTol = max(medianH * 1.8, h * 0.012);
+  final bands = _clusterBands(marks, yTol);
+
+  final strong = <List<_Blob>>[];
+  for (final band in bands) {
+    if (band.length < 18) continue;
+    final minX = band.map((b) => b.cx).reduce(min);
+    final maxX = band.map((b) => b.cx).reduce(max);
+    if ((maxX - minX) < w * 0.40) continue;
+    strong.add(band);
   }
-  if (splitIdx < 10 || marks.length - splitIdx < 10 || biggestGap < h * 0.15) {
+
+  if (strong.length < 2) {
     return {
       'failure': 'Found marks but could not separate the top and bottom rows. '
           'Make sure both black mark strips (above and below the answer block) are visible.',
-      'debugPng': debugFail(),
+      'debugPng': _annotateMarks(image, marks),
     };
   }
-  final topBand = marks.sublist(0, splitIdx);
-  final botBand = marks.sublist(splitIdx);
+
+  // Of the dense wide bands, take the two with the most marks (the timing
+  // strips), then order them top → bottom.
+  strong.sort((a, b) => b.length.compareTo(a.length));
+  final pair = strong.take(2).toList()
+    ..sort((a, b) {
+      final ay = a.map((m) => m.cy).reduce((p, q) => p + q) / a.length;
+      final by = b.map((m) => m.cy).reduce((p, q) => p + q) / b.length;
+      return ay.compareTo(by);
+    });
+  final topBand = pair[0];
+  final botBand = pair[1];
+
+  final topY = topBand.map((m) => m.cy).reduce((p, q) => p + q) / topBand.length;
+  final botY = botBand.map((m) => m.cy).reduce((p, q) => p + q) / botBand.length;
+  if (botY - topY < h * 0.12) {
+    return {
+      'failure': 'Found marks but could not separate the top and bottom rows. '
+          'Make sure both black mark strips (above and below the answer block) are visible.',
+      'debugPng': _annotateMarks(image, [...topBand, ...botBand]),
+    };
+  }
 
   _Blob leftMost(List<_Blob> l) => l.reduce((a, b) => a.cx <= b.cx ? a : b);
   _Blob rightMost(List<_Blob> l) => l.reduce((a, b) => a.cx >= b.cx ? a : b);
@@ -210,7 +268,6 @@ Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
 
   final anchorSpan = sqrt(pow(tr.cx - tl.cx, 2) + pow(tr.cy - tl.cy, 2));
   final bubbleR = max(t.bubbleRadiusU * anchorSpan, 3.0);
-  final rollR = max(t.rollBubbleRadiusU * anchorSpan, 3.0);
 
   double measureFill(Point<double> p, double radius) {
     final inner = radius * 0.68;
@@ -222,13 +279,14 @@ Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
         final px = (p.x + dx).round(), py = (p.y + dy).round();
         if (px < 0 || py < 0 || px >= w || py >= h) continue;
         total++;
-        if (red[py * w + px] < inkCut) inked++;
+        // True ink: dark in red AND green (pen / black print).
+        if (red[py * w + px] < inkCut && green[py * w + px] < inkCut) inked++;
       }
     }
     return total == 0 ? 0.0 : inked / total;
   }
 
-  // ---- Sample the answer grid ----
+  // ---- Sample the answer grid only (no roll-number reading) ----
   final readings = <Map<String, dynamic>>[];
   for (final col in t.columns) {
     for (int r = 0; r < col.questionCount; r++) {
@@ -253,34 +311,6 @@ Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
     if (f > hardEmpty && f < hardFilled && (f - cut).abs() < 0.12) ambiguous.add(m['q'] as int);
   }
 
-  // ---- Read the bubbled roll number ----
-  final rollDigits = <String>[];
-  bool rollOk = true;
-  for (int d = 0; d < t.rollColumnU.length; d++) {
-    double best = -1;
-    int bestDigit = -1;
-    int hits = 0;
-    for (int digit = 0; digit < t.rollRowV.length; digit++) {
-      final p = H.map(t.rollColumnU[d], t.rollRowV[digit]);
-      final f = measureFill(p, rollR);
-      if (f > 0.45) hits++;
-      if (f > best) {
-        best = f;
-        bestDigit = digit;
-      }
-    }
-    if (best > 0.45 && hits == 1) {
-      rollDigits.add(bestDigit.toString());
-    } else if (best <= 0.45) {
-      rollDigits.add(''); // that digit column left blank
-    } else {
-      rollOk = false; // more than one bubble in a digit column
-      break;
-    }
-  }
-  final rollJoined = rollDigits.join();
-  final rollNumber = (rollOk && rollJoined.isNotEmpty) ? rollJoined : null;
-
   // ---- Confidence ----
   final filledVals = readings.where((m) => m['d'] as bool).map((m) => m['f'] as double).toList();
   final emptyVals = readings.where((m) => !(m['d'] as bool)).map((m) => m['f'] as double).toList();
@@ -299,7 +329,7 @@ Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
   final cRed = img.ColorRgb8(255, 40, 40);
   final cYellow = img.ColorRgb8(255, 210, 0);
   final cBlue = img.ColorRgb8(40, 120, 255);
-  for (final m in marks) {
+  for (final m in [...topBand, ...botBand]) {
     img.drawRect(debug, x1: m.minX, y1: m.minY, x2: m.maxX, y2: m.maxY, color: cBlue);
   }
   for (final m in readings) {
@@ -310,14 +340,6 @@ Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
     final x = (m['x'] as double).round(), y = (m['y'] as double).round();
     img.drawCircle(debug, x: x, y: y, radius: bubbleR.round(), color: color);
     if (f) img.drawCircle(debug, x: x, y: y, radius: max(bubbleR.round() - 2, 2), color: color);
-  }
-  for (int d = 0; d < t.rollColumnU.length; d++) {
-    for (int digit = 0; digit < t.rollRowV.length; digit++) {
-      final p = H.map(t.rollColumnU[d], t.rollRowV[digit]);
-      final filled = measureFill(p, rollR) > 0.45;
-      img.drawCircle(debug, x: p.x.round(), y: p.y.round(), radius: rollR.round(),
-          color: filled ? cGreen : cRed);
-    }
   }
 
   final marked = <String, List<int>>{};
@@ -330,7 +352,7 @@ Map<String, dynamic> _processIsolate(Map<String, dynamic> args) {
   return {
     'marked': marked,
     'readings': readings,
-    'rollNumber': rollNumber,
+    'rollNumber': null,
     'confidence': confidence,
     'ambiguous': ambiguous.toList()..sort(),
     'debugPng': Uint8List.fromList(img.encodePng(debug)),
@@ -371,6 +393,7 @@ class OmrProcessor {
   /// Scans a photo with NO calibration — the sheet's own printed timing
   /// marks are located automatically and the built-in template is projected
   /// onto them, correcting for rotation, tilt and perspective.
+  /// Reads answer bubbles only; roll number is entered on the review screen.
   static Future<OmrScanOutcome> scan(File imageFile, Exam exam) async {
     final bytes = await imageFile.readAsBytes();
     final res = await compute(_processIsolate, {
@@ -402,7 +425,7 @@ class OmrProcessor {
     return OmrScanOutcome(
       marked: marked,
       readings: readings,
-      rollNumber: res['rollNumber'] as String?,
+      rollNumber: null,
       confidence: (res['confidence'] as num).toDouble(),
       ambiguousQuestions: List<int>.from(res['ambiguous']),
       debugPng: res['debugPng'] as Uint8List,

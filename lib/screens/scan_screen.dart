@@ -1,28 +1,29 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import '../db/db_helper.dart';
 import '../models/exam.dart';
+import '../models/student_result.dart';
 import '../services/omr_processor.dart';
+import 'review_screen.dart';
 
-/// Diagnostic tool. Pick or shoot any filled sheet and see, zoomed in,
-/// exactly where the app sampled each bubble and what it read. If the
-/// circles are sitting off the printed bubbles, calibration is the problem;
-/// if they're centred but reading wrong, it's a lighting/pen issue. Either
-/// way this tells you which, instead of guessing.
-class DetectionTestScreen extends StatefulWidget {
+/// Capture-or-pick a sheet photo (same path as Test Detection), run OMR,
+/// then open Review to confirm marks + type the roll number and save.
+class ScanScreen extends StatefulWidget {
   final int examId;
-  const DetectionTestScreen({super.key, required this.examId});
+  const ScanScreen({super.key, required this.examId});
 
   @override
-  State<DetectionTestScreen> createState() => _DetectionTestScreenState();
+  State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _DetectionTestScreenState extends State<DetectionTestScreen> {
+class _ScanScreenState extends State<ScanScreen> {
   Exam? _exam;
   OmrScanOutcome? _outcome;
   bool _busy = false;
   String? _error;
+  int _scannedCount = 0;
 
   @override
   void initState() {
@@ -34,6 +35,7 @@ class _DetectionTestScreenState extends State<DetectionTestScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _outcome = null;
     });
     try {
       final picked = await ImagePicker().pickImage(source: source, imageQuality: 95);
@@ -42,14 +44,61 @@ class _DetectionTestScreenState extends State<DetectionTestScreen> {
         return;
       }
       final outcome = await OmrProcessor.scan(File(picked.path), _exam!);
+      if (!mounted) return;
+
+      if (!outcome.registered) {
+        setState(() {
+          _outcome = outcome;
+          _error = outcome.failureReason;
+          _busy = false;
+        });
+        return;
+      }
+
       setState(() {
         _outcome = outcome;
-        _error = outcome.failureReason;
+        _busy = false;
       });
+
+      final confirmed = await Navigator.push<ReviewResult>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ReviewScreen(exam: _exam!, outcome: outcome),
+        ),
+      );
+      if (!mounted) return;
+      if (confirmed == null) return;
+
+      final (correct, wrong, unattempted, score) =
+          OmrProcessor.grade(_exam!, confirmed.marked);
+      await DBHelper.instance.insertResult(StudentResult(
+        examId: widget.examId,
+        rollNumber: confirmed.rollNumber,
+        marked: confirmed.marked,
+        correctCount: correct,
+        wrongCount: wrong,
+        unattemptedCount: unattempted,
+        score: score,
+        scannedAt: DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
+      ));
+      if (!mounted) return;
+      setState(() => _scannedCount++);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 2),
+          backgroundColor: Colors.green[700],
+          content: Text(
+            'Roll ${confirmed.rollNumber} saved · $correct correct — scan the next sheet',
+          ),
+        ),
+      );
     } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _busy = false;
+        });
+      }
     }
   }
 
@@ -57,7 +106,20 @@ class _DetectionTestScreenState extends State<DetectionTestScreen> {
   Widget build(BuildContext context) {
     final outcome = _outcome;
     return Scaffold(
-      appBar: AppBar(title: const Text('Test Detection')),
+      appBar: AppBar(
+        title: Text(_exam?.name ?? 'Scan'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                'Saved: $_scannedCount',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: _busy
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -69,7 +131,7 @@ class _DetectionTestScreenState extends State<DetectionTestScreen> {
                     padding: const EdgeInsets.all(12),
                     child: Text(_error!, style: const TextStyle(color: Colors.red)),
                   ),
-                if (outcome != null) ...[
+                if (outcome != null && outcome.registered) ...[
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -77,12 +139,18 @@ class _DetectionTestScreenState extends State<DetectionTestScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Confidence: ${(outcome.confidence * 100).round()}%',
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text('Detected marks on ${outcome.marked.values.where((v) => v.isNotEmpty).length} question(s)'),
+                        Text(
+                          'Confidence: ${(outcome.confidence * 100).round()}%',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'Detected marks on ${outcome.marked.values.where((v) => v.isNotEmpty).length} question(s)',
+                        ),
                         if (outcome.ambiguousQuestions.isNotEmpty)
-                          Text('Borderline: Q${outcome.ambiguousQuestions.join(", Q")}',
-                              style: const TextStyle(color: Colors.orange, fontSize: 12)),
+                          Text(
+                            'Borderline: Q${outcome.ambiguousQuestions.join(", Q")}',
+                            style: const TextStyle(color: Colors.orange, fontSize: 12),
+                          ),
                       ],
                     ),
                   ),
@@ -98,12 +166,19 @@ class _DetectionTestScreenState extends State<DetectionTestScreen> {
                   const Padding(
                     padding: EdgeInsets.all(10),
                     child: Text(
-                      'Pinch to zoom right in.\n'
-                      'Blue boxes = the printed timing marks the app locked onto.\n'
-                      'Circles should sit exactly on the printed bubbles.\n'
-                      'Green = read filled · Red = read empty · Yellow = borderline',
+                      'Review opened after a successful read. Capture again for the next sheet.',
                       style: TextStyle(fontSize: 11, color: Colors.grey),
                       textAlign: TextAlign.center,
+                    ),
+                  ),
+                ] else if (outcome != null && !outcome.registered) ...[
+                  Expanded(
+                    child: Container(
+                      color: Colors.black12,
+                      child: InteractiveViewer(
+                        maxScale: 12,
+                        child: Center(child: Image.memory(outcome.debugPng)),
+                      ),
                     ),
                   ),
                 ] else
@@ -113,8 +188,7 @@ class _DetectionTestScreenState extends State<DetectionTestScreen> {
                         padding: EdgeInsets.all(24),
                         child: Text(
                           'Take or pick a photo of a filled answer sheet.\n\n'
-                          'You will see the registration marks the app locked onto and '
-                          'exactly where every bubble was sampled.',
+                          'Same capture path as Test Detection — then confirm marks and enter the roll number to save.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.grey),
                         ),

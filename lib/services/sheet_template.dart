@@ -56,10 +56,11 @@ class SheetTemplate {
 
 /// Measured directly from the supplied reference sheet:
 /// 50 questions in 3 columns (1-17, 18-34, 35-50), 4 options each
-/// (ক / খ / গ / ঘ), 6-digit bubbled roll number, red printing with black
-/// timing marks top and bottom of the answer block.
+/// (ক / খ / গ / ঘ), red printing with black timing marks top and bottom
+/// of the answer block. Roll bubbles exist on the sheet but are not read —
+/// the app only samples the answer grid.
 const SheetTemplate kDefaultSheetTemplate = SheetTemplate(
-  name: 'Standard 50Q · 4 option · 6-digit roll',
+  name: 'Standard 50Q · 4 option',
   optionsCount: 4,
   totalQuestions: 50,
   pageAspectRatio: 0.771,
