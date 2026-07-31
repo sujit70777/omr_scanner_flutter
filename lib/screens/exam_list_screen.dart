@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
 import '../models/exam.dart';
+import '../services/entitlement_service.dart';
+import '../services/premium_config.dart';
 import 'add_exam_screen.dart';
 import 'app_settings_screen.dart';
 import 'exam_detail_screen.dart';
+import 'paywall_screen.dart';
 
 class ExamListScreen extends StatefulWidget {
   const ExamListScreen({super.key});
@@ -32,6 +35,17 @@ class _ExamListScreenState extends State<ExamListScreen> {
   }
 
   Future<void> _addExam() async {
+    final ent = EntitlementService.instance;
+    if (!await ent.canCreateExam()) {
+      final unlocked = await PaywallScreen.open(
+        context,
+        reason:
+            'Free plan allows ${PremiumConfig.freeExamLimit} exam. Unlock Premium for unlimited exams.',
+      );
+      if (!unlocked) return;
+      if (!await ent.canCreateExam()) return;
+    }
+    if (!mounted) return;
     final created = await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (_) => const AddExamScreen()),
@@ -49,59 +63,102 @@ class _ExamListScreenState extends State<ExamListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Exams'),
-        actions: [
-          IconButton(
-            tooltip: 'App settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AppSettingsScreen()),
-            ),
+    final ent = EntitlementService.instance;
+    return AnimatedBuilder(
+      animation: ent,
+      builder: (context, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Exams'),
+            actions: [
+              if (!ent.isPremium)
+                TextButton(
+                  onPressed: () => PaywallScreen.open(context),
+                  child: const Text('Premium'),
+                ),
+              IconButton(
+                tooltip: 'App settings',
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AppSettingsScreen()),
+                  );
+                  setState(() {});
+                },
+              ),
+            ],
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _exams.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'No exams yet.\nTap the + button to add your first exam.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
+          body: Column(
+            children: [
+              if (!ent.isPremium)
+                Material(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  child: ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.info_outline),
+                    title: Text(
+                      'Free · ${_exams.length}/${PremiumConfig.freeExamLimit} exams · '
+                      '${ent.scansUsedThisMonth}/${PremiumConfig.freeScansPerMonth} scans this month',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    trailing: TextButton(
+                      onPressed: () => PaywallScreen.open(context),
+                      child: const Text('Upgrade'),
                     ),
                   ),
-                )
-              : ListView.separated(
-                  itemCount: _exams.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, i) {
-                    final e = _exams[i];
-                    return ListTile(
-                      leading: CircleAvatar(child: Text('${e.totalQuestions}')),
-                      title: Text(e.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Builder(builder: (_) {
-                        final issues = [
-                          if (!e.hasAnswerKey) 'Answer key not set',
-                        ];
-                        return Text(
-                          issues.isEmpty ? 'Ready to scan' : issues.join(' · '),
-                          style: TextStyle(color: issues.isEmpty ? Colors.green[700] : Colors.orange[800]),
-                        );
-                      }),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _openExam(e),
-                    );
-                  },
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addExam,
-        child: const Icon(Icons.add),
-      ),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _exams.isEmpty
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'No exams yet.\nTap the + button to add your first exam.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 16, color: Colors.grey),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: _exams.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, i) {
+                              final e = _exams[i];
+                              return ListTile(
+                                leading: CircleAvatar(child: Text('${e.totalQuestions}')),
+                                title: Text(e.name,
+                                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Builder(builder: (_) {
+                                  final issues = [
+                                    if (!e.hasAnswerKey) 'Answer key not set',
+                                  ];
+                                  return Text(
+                                    issues.isEmpty
+                                        ? 'Ready to scan'
+                                        : issues.join(' · '),
+                                    style: TextStyle(
+                                        color: issues.isEmpty
+                                            ? Colors.green[700]
+                                            : Colors.orange[800]),
+                                  );
+                                }),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () => _openExam(e),
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: _addExam,
+            child: const Icon(Icons.add),
+          ),
+        );
+      },
     );
   }
 }

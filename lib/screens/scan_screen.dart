@@ -6,7 +6,10 @@ import '../db/db_helper.dart';
 import '../models/exam.dart';
 import '../models/student_result.dart';
 import '../services/app_settings.dart';
+import '../services/entitlement_service.dart';
 import '../services/omr_processor.dart';
+import '../services/premium_config.dart';
+import 'paywall_screen.dart';
 import 'review_screen.dart';
 
 /// Capture-or-pick a sheet photo (same path as Test Detection), run OMR,
@@ -33,6 +36,18 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> _run(ImageSource source) async {
+    final ent = EntitlementService.instance;
+    if (!await ent.canScanSheet()) {
+      if (!mounted) return;
+      await PaywallScreen.open(
+        context,
+        reason:
+            'Free plan allows ${PremiumConfig.freeScansPerMonth} scans per month '
+            '(${ent.scansUsedThisMonth} used). Unlock Premium for unlimited scans.',
+      );
+      if (!await ent.canScanSheet()) return;
+    }
+
     setState(() {
       _busy = true;
       _error = null;
@@ -85,6 +100,7 @@ class _ScanScreenState extends State<ScanScreen> {
         score: score,
         scannedAt: DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
       ));
+      await EntitlementService.instance.recordSuccessfulScan();
       if (!mounted) return;
       setState(() => _scannedCount++);
       ScaffoldMessenger.of(context).showSnackBar(

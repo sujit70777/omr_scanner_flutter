@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
 import '../models/exam.dart';
 import '../models/student_result.dart';
+import '../services/entitlement_service.dart';
 import '../services/results_exporter.dart';
+import 'paywall_screen.dart';
 import 'student_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -46,6 +48,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Future<void> _export(ExportFormat format) async {
     if (_exam == null || _results.isEmpty || _exporting) return;
+    final ent = EntitlementService.instance;
+    if (!ent.canExport(format)) {
+      final ok = await PaywallScreen.open(
+        context,
+        reason: 'Excel and PDF export are Premium. CSV stays free.',
+      );
+      if (!ok || !ent.canExport(format)) return;
+    }
     setState(() => _exporting = true);
     try {
       await ResultsExporter.export(
@@ -92,8 +102,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               enabled: !_loading && _results.isNotEmpty,
               icon: const Icon(Icons.ios_share),
               onSelected: _export,
-              itemBuilder: (_) => const [
-                PopupMenuItem(
+              itemBuilder: (_) => [
+                const PopupMenuItem(
                   value: ExportFormat.csv,
                   child: ListTile(
                     dense: true,
@@ -107,8 +117,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   child: ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.grid_on),
-                    title: Text('Export Excel'),
+                    leading: const Icon(Icons.grid_on),
+                    title: const Text('Export Excel'),
+                    trailing: EntitlementService.instance.isPremium
+                        ? null
+                        : const Icon(Icons.lock_outline, size: 18),
                   ),
                 ),
                 PopupMenuItem(
@@ -116,8 +129,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   child: ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.picture_as_pdf_outlined),
-                    title: Text('Export PDF'),
+                    leading: const Icon(Icons.picture_as_pdf_outlined),
+                    title: const Text('Export PDF'),
+                    trailing: EntitlementService.instance.isPremium
+                        ? null
+                        : const Icon(Icons.lock_outline, size: 18),
                   ),
                 ),
               ],
