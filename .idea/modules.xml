@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/omr_scanner_raj.iml" filepath="$PROJECT_DIR$/omr_scanner_raj.iml" />
+      <module fileurl="file://$PROJECT_DIR$/android/omr_scanner_raj_android.iml" filepath="$PROJECT_DIR$/android/omr_scanner_raj_android.iml" />
+    </modules>
+  </component>
+</project>
