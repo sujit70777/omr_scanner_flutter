@@ -5,6 +5,12 @@ answer key, calibrate the bubble grid once per sheet layout, then scan
 sheets with a **live camera guide + auto-capture** and get instant scoring
 stored per roll number.
 
+## Screenshots
+
+| Exams list | Exam detail | Exam settings | Test detection |
+|---|---|---|---|
+| ![Exams list](screenshots/3189.jpg) | ![Exam detail](screenshots/3191.jpg) | ![Exam settings](screenshots/3193.jpg) | ![Test detection](screenshots/3197.jpg) |
+
 ## 1. Setup
 
 This zip contains only the `lib/` source + `pubspec.yaml` (no `android/`,
