@@ -39,3 +39,4 @@ build/
 
 # Web build output
 web/build/
+/android/build
